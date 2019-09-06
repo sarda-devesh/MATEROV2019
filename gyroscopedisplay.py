@@ -3,26 +3,34 @@ import cv2
 import math 
 from PIL import Image
 import random 
+
 brown = (19, 69, 139)
 blue = (255, 255, 0)
 
 class Display: 
-	width = 700
-	height = 700
+	width = 650
+	height = 650
 	radius = 250
 	angle = 85
-	previous = -1 
+	scale = 0.75
+	compass_size = 0.75
 
 	def rotate_image(self, image, angle):
 		(h, w) = image.shape[:2]
 		(cX, cY) = (w // 2, h // 2)
 		M = cv2.getRotationMatrix2D((cX, cY), angle, 1.0)
 		return cv2.warpAffine(image, M, (w, h))
+
+	def adjustsize(self, sign): 
+		self.scale += sign * 0.01
+	
+	def adjustcompass(self, sign):
+		self.compass_size += sign * 0.01
 	
 	def make_compass(self, azimuth): 
-		height = int(self.height)
-		width = int(self.width * 0.75)
-		radius = int(self.radius * 0.75)
+		height = int(self.height * self.compass_size)
+		width = int(self.width)
+		radius = int(self.radius * self.compass_size)
 		center_x = width // 2 - 10
 		center_y = height // 2
 		drop = radius * math.sin(math.radians(self.angle))
@@ -43,6 +51,8 @@ class Display:
 		#cv2.circle(image, (center_x, center_y), radius, (128, 128, 128), -1)
 		cv2.circle(image, (center_x, center_y), radius, (255, 0, 0), thickness= 10)
 		image = self.make_compass_marks(image, center_x, center_y, azimuth, radius)
+		shift = 40
+		image = image[int(center_y - radius - shift): int(center_y + radius + shift), 0: image.shape[1]]
 		return image
 		
 	
@@ -106,7 +116,7 @@ class Display:
 					text_point = (copy_x - 35, copy_y - 5)
 				if copy_y > y: 
 					text_point = (copy_x - 60, copy_y + 20)
-					if copy_x > x: 
+					if copy_x >= x: 
 						text_point = (copy_x + 5, copy_y + 20)
 				cv2.putText(image, str(display_angle), text_point, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 1)
 		color = (255, 255, 255)
@@ -180,19 +190,20 @@ class Display:
 			image = self.rotate_image(image,bank)
 		image = self.indicate_bank(image, x, y, bank, bank_range)
 		compass = self.make_compass(azimuth)
+		value = 40
+		image = image[int(y - self.radius - value - 8): int(y + self.radius + value), 0: image.shape[0]]
 		image_h, image_w, im_ch = image.shape
 		compass_h, compass_w, compass_ch = compass.shape
-		factor = (1.0 * self.height)/compass_h
+		factor = (1.0 * image_w)/compass_w
 		compass = cv2.resize(compass, None, fx = factor, fy = factor)
-		image = np.hstack((image, compass))
-		'''
-		display = "Pitch:" + str(theta) + "    Bank:" + str(bank)+ "    Azimuth:" + str(azimuth)
-		image = cv2.copyMakeBorder(image, 0, 100, 0, 0, cv2.BORDER_CONSTANT, value = (0, 0, 0))
-		height, width, channels = image.shape
-		factor = 1.25
-		cv2.putText(image, display, (10, int(height - 35 * factor)), cv2.FONT_HERSHEY_SIMPLEX, factor, (255, 255, 255), 1)
-		'''
+		image = np.vstack((image, compass))
+		image = cv2.resize(image, None, fx = self.scale, fy = self.scale)
 		cv2.imshow("Display", image)
+	
+	def end(self): 
+		cv2.destroyAllWindows()
+		print("The compass size was " + str(round(self.compass_size, 2)))
+		print("The scale value was " + str(round(self.scale, 2)))
 
 def main(): 
 	dis = Display()
@@ -201,8 +212,10 @@ def main():
 	psi = 0
 	while(True): 
 		k = cv2.waitKey(1) & 0xFF
-		if k == ord('q'): 
-			break 
+		change = 0
+		compass = 0
+		if k == ord('q'):  
+			break
 		if k == ord('w'): 
 			theta += 18
 		elif k == ord('s'): 
@@ -215,8 +228,20 @@ def main():
 			psi -= 18
 		if k == ord('m'): 
 			psi += 18
+		if k == ord('o'): 
+			change = -1
+		if k == ord('p'): 
+			change = 1
+		if k == ord('e'):
+			compass = -1
+		if k == ord('r'):
+			compass = 1
+		if change != 0: 
+			dis.adjustsize(change)
+		if compass != 0:
+			dis.adjustcompass(compass)
 		dis.make_image(phi, theta, psi)
-	cv2.destroyAllWindows()
+	dis.end()
 	
 
 if __name__ == "__main__": 
