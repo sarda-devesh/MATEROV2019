@@ -12,8 +12,8 @@ class Display:
 	height = 650
 	radius = 250
 	angle = 85
-	scale = 0.75
-	compass_size = 0.75
+	scale = 0.86
+	compass_size = 0.8
 
 	def rotate_image(self, image, angle):
 		(h, w) = image.shape[:2]
@@ -36,6 +36,7 @@ class Display:
 		drop = radius * math.sin(math.radians(self.angle))
 		x_c = math.sqrt(math.pow(radius, 2) - math.pow(drop, 2))
 		image = np.zeros((height, width, 3), np.uint8) 
+		cv2.circle(image, (center_x, center_y), radius, (128, 128, 128), -1)
 		lower_left = [int(center_x - x_c), int(center_y + drop - 10)]
 		lower_right = [int(center_x + x_c), int(center_y + drop - 10)]
 		top_left = [int(center_x - x_c), int(center_y - drop + 60)]
@@ -48,7 +49,6 @@ class Display:
 		triangle = triangle.reshape(-1, 1, 2)
 		cv2.fillPoly(image, [triangle], (0, 255, 0))
 		image = self.rotate_image(image, azimuth)
-		#cv2.circle(image, (center_x, center_y), radius, (128, 128, 128), -1)
 		cv2.circle(image, (center_x, center_y), radius, (255, 0, 0), thickness= 10)
 		image = self.make_compass_marks(image, center_x, center_y, azimuth, radius)
 		shift = 40
