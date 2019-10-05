@@ -3,16 +3,32 @@ import cv2
 import math 
 from PIL import Image
 import random 
+import serial
+import sys
+import psutil
+import os 
 
 brown = (19, 69, 139)
 blue = (255, 255, 0)
+
+def serial_ports():
+    if sys.platform.startswith('win'):
+        ports = ['COM%s' % (i + 1) for i in range(256)]
+    for port in ports:
+        try:
+            s = serial.Serial(port)
+            s.close()
+            return port
+        except (OSError, serial.SerialException):
+            pass
+    return "None"
 
 class Display: 
 	width = 650
 	height = 650
 	radius = 250
 	angle = 85
-	scale = 0.86
+	scale = 1.35
 	compass_size = 0.8
 
 	def rotate_image(self, image, angle):
@@ -151,11 +167,19 @@ class Display:
 				cv2.line(image, (x - 10, center_y), (x + 10, center_y), (255, 255, 255), thickness= 1)
 			start -= (1.0/18.0) * pitch_range
 			count += 1
+	
+	def bound_values(self, pitch, bank, azimuth, pitch_range, bank_range):
+		pitch = min(pitch_range, max(-pitch_range, pitch))
+		bank = min(bank_range, max(-bank_range, bank))
+		azimuth = min(360, max(-360, azimuth))
+		return (pitch, bank, azimuth)
 
-	def make_image(self, phi, theta, psi, pitch_range = 180, bank_range = 150): 
+	def make_image(self, phi, theta, psi, pitch_range = 170, bank_range = 150): 
 		bank = -1 * phi
-		pitch = -theta/pitch_range
-		azimuth = psi 
+		pitch = -theta
+		azimuth = psi
+		pitch, bank, azimuth = self.bound_values(pitch, bank, azimuth, pitch_range, bank_range)
+		pitch /= (1.0 * pitch_range)
 		image = np.zeros((self.height, self.width, 3), np.uint8) 
 		x = int(self.width/2)
 		y = int(self.height/2)
@@ -189,6 +213,7 @@ class Display:
 		if(bank != 0):
 			image = self.rotate_image(image,bank)
 		image = self.indicate_bank(image, x, y, bank, bank_range)
+		'''
 		compass = self.make_compass(azimuth)
 		value = 40
 		image = image[int(y - self.radius - value - 8): int(y + self.radius + value), 0: image.shape[0]]
@@ -197,6 +222,7 @@ class Display:
 		factor = (1.0 * image_w)/compass_w
 		compass = cv2.resize(compass, None, fx = factor, fy = factor)
 		image = np.vstack((image, compass))
+		'''
 		image = cv2.resize(image, None, fx = self.scale, fy = self.scale)
 		cv2.imshow("Display", image)
 	
@@ -204,6 +230,51 @@ class Display:
 		cv2.destroyAllWindows()
 		print("The compass size was " + str(round(self.compass_size, 2)))
 		print("The scale value was " + str(round(self.scale, 2)))
+
+
+def testing(): 
+	dis = Display()
+	process = psutil.Process(os.getpid())
+	phi = 0
+	theta = 0
+	psi = 0
+	t = "None"
+	while(t == "None"):
+		t  = serial_ports()
+	ser = serial.Serial(t, baudrate=115200,  timeout=0)
+	while(True): 
+		k = cv2.waitKey(1) & 0xFF
+		if k == ord('q'):  
+			break
+		if(ser.in_waiting > 0):
+			data = str(ser.readline())
+			if not "\\" in data:
+				continue
+			index = data.index("\\")
+			data = data[2:index]
+			broken = data.split(",")
+			try:
+				phi = int(float(broken[1]))
+				theta = int(float(broken[0]))
+			except: 
+				continue
+		change = 0
+		compass = 0
+		if k == ord('a'): 
+			change = -1
+		if k == ord('d'): 
+			change = 1
+		if k == ord('w'):
+			compass = -1
+		if k == ord('s'):
+			compass = 1
+		if change != 0: 
+			dis.adjustsize(change)
+		if compass != 0:
+			dis.adjustcompass(compass)
+		dis.make_image(phi, theta, psi)
+	print(process.memory_info().rss/1e9)
+	dis.end()
 
 def main(): 
 	dis = Display()
@@ -245,4 +316,4 @@ def main():
 	
 
 if __name__ == "__main__": 
-	main()
+	testing()

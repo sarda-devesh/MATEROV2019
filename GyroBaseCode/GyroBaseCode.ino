@@ -8,40 +8,43 @@
 
 #include <Wire.h>
 #include <MPU6050.h>
-unsigned long previous; 
-unsigned long waittime = 1000;
+unsigned long timer = 0;
+float waitTime = 0.1; 
+int last[] = {0, 0};
+int bound = 5;
 MPU6050 mpu;
 
 void setup() 
 {
   Serial.begin(115200);
 
-  Serial.println("Initialize MPU6050");
+  //Serial.println("Initialize MPU6050");
 
   while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G))
   {
     Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
     delay(500);
   }
-  previous = millis();
+
+  timer = millis();
 }
 
-//Pitch,Roll
 void loop()
 {
-  if((millis() - previous) >= waittime) {
-    // Read normalized values 
+  if((millis() - timer) >= 1000 * waitTime) { 
     Vector normAccel = mpu.readNormalizeAccel();
   
     // Calculate Pitch & Roll
     int pitch = -(atan2(normAccel.XAxis, sqrt(normAccel.YAxis*normAccel.YAxis + normAccel.ZAxis*normAccel.ZAxis))*180.0)/M_PI;
     int roll = (atan2(normAccel.YAxis, normAccel.ZAxis)*180.0)/M_PI;
-  
-    // Output
-    Serial.print(pitch);
-    Serial.print(",");
-    Serial.println(roll);
-    previous = millis();
-  } 
-  
+    if(abs(last[0] - pitch) > bound || abs(last[1] - roll) > bound) { 
+      // Output
+      Serial.print(pitch);
+      Serial.print(",");
+      Serial.println(roll);  
+      last[0] = pitch; 
+      last[1] = roll;
+    }
+    timer = millis();
+  }
 }
