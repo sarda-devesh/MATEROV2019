@@ -1,6 +1,5 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
-
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #define ONE_WIRE_BUS A0
@@ -22,7 +21,8 @@ int SERVOMAX = 500;
 double average = (SERVOMIN + SERVOMAX) / 2.0;
 double spread = (SERVOMAX - SERVOMIN) / (2.0 * 105);
 int count = 5;
-
+pwm.begin();
+  pwm.setPWMFreq(60);
 float currenttemp = 0.0;
 
 void setup() {
@@ -34,8 +34,7 @@ void setup() {
     pinMode(pvmPin[x], OUTPUT);
   }
   pinMode(water,INPUT);
-  pwm.begin();
-  pwm.setPWMFreq(60);
+  
   Wire.setClock(100000);
   sensors.begin();
 }
