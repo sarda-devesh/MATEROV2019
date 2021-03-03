@@ -3,31 +3,56 @@ import cv2
 import math 
 from PIL import Image
 import random 
+import serial
+import sys
+import psutil
+import os 
+
 brown = (19, 69, 139)
 blue = (255, 255, 0)
 
+def serial_ports():
+    if sys.platform.startswith('win'):
+        ports = ['COM%s' % (i + 1) for i in range(256)]
+    for port in ports:
+        try:
+            s = serial.Serial(port)
+            s.close()
+            return port
+        except (OSError, serial.SerialException):
+            pass
+    return "None"
+
 class Display: 
-	width = 700
-	height = 700
+	width = 650
+	height = 650
 	radius = 250
 	angle = 85
-	previous = -1 
+	scale = 1.35
+	compass_size = 0.8
 
 	def rotate_image(self, image, angle):
 		(h, w) = image.shape[:2]
 		(cX, cY) = (w // 2, h // 2)
 		M = cv2.getRotationMatrix2D((cX, cY), angle, 1.0)
 		return cv2.warpAffine(image, M, (w, h))
+
+	def adjustsize(self, sign): 
+		self.scale += sign * 0.01
+	
+	def adjustcompass(self, sign):
+		self.compass_size += sign * 0.01
 	
 	def make_compass(self, azimuth): 
-		height = int(self.height)
-		width = int(self.width * 0.75)
-		radius = int(self.radius * 0.75)
+		height = int(self.height * self.compass_size)
+		width = int(self.width)
+		radius = int(self.radius * self.compass_size)
 		center_x = width // 2 - 10
 		center_y = height // 2
 		drop = radius * math.sin(math.radians(self.angle))
 		x_c = math.sqrt(math.pow(radius, 2) - math.pow(drop, 2))
 		image = np.zeros((height, width, 3), np.uint8) 
+		cv2.circle(image, (center_x, center_y), radius, (128, 128, 128), -1)
 		lower_left = [int(center_x - x_c), int(center_y + drop - 10)]
 		lower_right = [int(center_x + x_c), int(center_y + drop - 10)]
 		top_left = [int(center_x - x_c), int(center_y - drop + 60)]
@@ -40,9 +65,10 @@ class Display:
 		triangle = triangle.reshape(-1, 1, 2)
 		cv2.fillPoly(image, [triangle], (0, 255, 0))
 		image = self.rotate_image(image, azimuth)
-		#cv2.circle(image, (center_x, center_y), radius, (128, 128, 128), -1)
 		cv2.circle(image, (center_x, center_y), radius, (255, 0, 0), thickness= 10)
 		image = self.make_compass_marks(image, center_x, center_y, azimuth, radius)
+		shift = 40
+		image = image[int(center_y - radius - shift): int(center_y + radius + shift), 0: image.shape[1]]
 		return image
 		
 	
@@ -106,7 +132,7 @@ class Display:
 					text_point = (copy_x - 35, copy_y - 5)
 				if copy_y > y: 
 					text_point = (copy_x - 60, copy_y + 20)
-					if copy_x > x: 
+					if copy_x >= x: 
 						text_point = (copy_x + 5, copy_y + 20)
 				cv2.putText(image, str(display_angle), text_point, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 1)
 		color = (255, 255, 255)
@@ -141,11 +167,19 @@ class Display:
 				cv2.line(image, (x - 10, center_y), (x + 10, center_y), (255, 255, 255), thickness= 1)
 			start -= (1.0/18.0) * pitch_range
 			count += 1
+	
+	def bound_values(self, pitch, bank, azimuth, pitch_range, bank_range):
+		pitch = min(pitch_range, max(-pitch_range, pitch))
+		bank = min(bank_range, max(-bank_range, bank))
+		azimuth = min(360, max(-360, azimuth))
+		return (pitch, bank, azimuth)
 
-	def make_image(self, phi, theta, psi, pitch_range = 180, bank_range = 150): 
+	def make_image(self, phi, theta, psi, pitch_range = 170, bank_range = 150): 
 		bank = -1 * phi
-		pitch = -theta/pitch_range
-		azimuth = psi 
+		pitch = -theta
+		azimuth = psi
+		pitch, bank, azimuth = self.bound_values(pitch, bank, azimuth, pitch_range, bank_range)
+		pitch /= (1.0 * pitch_range)
 		image = np.zeros((self.height, self.width, 3), np.uint8) 
 		x = int(self.width/2)
 		y = int(self.height/2)
@@ -179,20 +213,68 @@ class Display:
 		if(bank != 0):
 			image = self.rotate_image(image,bank)
 		image = self.indicate_bank(image, x, y, bank, bank_range)
+		'''
 		compass = self.make_compass(azimuth)
+		value = 40
+		image = image[int(y - self.radius - value - 8): int(y + self.radius + value), 0: image.shape[0]]
 		image_h, image_w, im_ch = image.shape
 		compass_h, compass_w, compass_ch = compass.shape
-		factor = (1.0 * self.height)/compass_h
+		factor = (1.0 * image_w)/compass_w
 		compass = cv2.resize(compass, None, fx = factor, fy = factor)
-		image = np.hstack((image, compass))
+		image = np.vstack((image, compass))
 		'''
-		display = "Pitch:" + str(theta) + "    Bank:" + str(bank)+ "    Azimuth:" + str(azimuth)
-		image = cv2.copyMakeBorder(image, 0, 100, 0, 0, cv2.BORDER_CONSTANT, value = (0, 0, 0))
-		height, width, channels = image.shape
-		factor = 1.25
-		cv2.putText(image, display, (10, int(height - 35 * factor)), cv2.FONT_HERSHEY_SIMPLEX, factor, (255, 255, 255), 1)
-		'''
+		image = cv2.resize(image, None, fx = self.scale, fy = self.scale)
 		cv2.imshow("Display", image)
+	
+	def end(self): 
+		cv2.destroyAllWindows()
+		print("The compass size was " + str(round(self.compass_size, 2)))
+		print("The scale value was " + str(round(self.scale, 2)))
+
+
+def testing(): 
+	dis = Display()
+	process = psutil.Process(os.getpid())
+	phi = 0
+	theta = 0
+	psi = 0
+	t = "None"
+	while(t == "None"):
+		t  = serial_ports()
+	ser = serial.Serial(t, baudrate=115200,  timeout=0)
+	while(True): 
+		k = cv2.waitKey(1) & 0xFF
+		if k == ord('q'):  
+			break
+		if(ser.in_waiting > 0):
+			data = str(ser.readline())
+			if not "\\" in data:
+				continue
+			index = data.index("\\")
+			data = data[2:index]
+			broken = data.split(",")
+			try:
+				phi = int(float(broken[1]))
+				theta = int(float(broken[0]))
+			except: 
+				continue
+		change = 0
+		compass = 0
+		if k == ord('a'): 
+			change = -1
+		if k == ord('d'): 
+			change = 1
+		if k == ord('w'):
+			compass = -1
+		if k == ord('s'):
+			compass = 1
+		if change != 0: 
+			dis.adjustsize(change)
+		if compass != 0:
+			dis.adjustcompass(compass)
+		dis.make_image(phi, theta, psi)
+	print(process.memory_info().rss/1e9)
+	dis.end()
 
 def main(): 
 	dis = Display()
@@ -201,8 +283,10 @@ def main():
 	psi = 0
 	while(True): 
 		k = cv2.waitKey(1) & 0xFF
-		if k == ord('q'): 
-			break 
+		change = 0
+		compass = 0
+		if k == ord('q'):  
+			break
 		if k == ord('w'): 
 			theta += 18
 		elif k == ord('s'): 
@@ -215,9 +299,21 @@ def main():
 			psi -= 18
 		if k == ord('m'): 
 			psi += 18
+		if k == ord('o'): 
+			change = -1
+		if k == ord('p'): 
+			change = 1
+		if k == ord('e'):
+			compass = -1
+		if k == ord('r'):
+			compass = 1
+		if change != 0: 
+			dis.adjustsize(change)
+		if compass != 0:
+			dis.adjustcompass(compass)
 		dis.make_image(phi, theta, psi)
-	cv2.destroyAllWindows()
+	dis.end()
 	
 
 if __name__ == "__main__": 
-	main()
+	testing()
